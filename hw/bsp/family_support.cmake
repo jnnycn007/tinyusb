@@ -69,6 +69,10 @@ if (NOT FAMILY STREQUAL rp2040)
   endif()
 endif()
 
+if (NOT NO_WARN_RWX_SEGMENTS_SUPPORTED)
+  set(NO_WARN_RWX_SEGMENTS_SUPPORTED 1)
+endif()
+
 set(WARNING_FLAGS_GNU
   -Wall
   -Wextra
@@ -210,7 +214,7 @@ function(family_configure_common TARGET RTOS)
   # Generate linker map file
   if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_link_options(${TARGET} PUBLIC "LINKER:-Map=$<TARGET_FILE:${TARGET}>.map")
-    if (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0)
+    if (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0 AND NO_WARN_RWX_SEGMENTS_SUPPORTED)
       target_link_options(${TARGET} PUBLIC "LINKER:--no-warn-rwx-segments")
     endif ()
  elseif (CMAKE_C_COMPILER_ID STREQUAL "Clang")
@@ -360,7 +364,7 @@ function(family_add_default_example_warnings TARGET)
     )
 
   if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    if (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0)
+    if (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0 AND NO_WARN_RWX_SEGMENTS_SUPPORTED)
       target_link_options(${TARGET} PUBLIC "LINKER:--no-warn-rwx-segments")
     endif()
 
@@ -395,6 +399,11 @@ function(family_flash_jlink TARGET)
     set(JLINK_IF swd)
   endif ()
 
+  if (NOT DEFINED JLINK_OPTION)
+    set(JLINK_OPTION "")
+  endif ()
+  separate_arguments(OPTION_LIST UNIX_COMMAND ${JLINK_OPTION})
+
   file(GENERATE
     OUTPUT $<TARGET_FILE_DIR:${TARGET}>/${TARGET}.jlink
     CONTENT "halt
@@ -406,7 +415,8 @@ exit"
 
   add_custom_target(${TARGET}-jlink
     DEPENDS ${TARGET}
-    COMMAND ${JLINKEXE} -device ${JLINK_DEVICE} -if ${JLINK_IF} -JTAGConf -1,-1 -speed auto -CommandFile $<TARGET_FILE_DIR:${TARGET}>/${TARGET}.jlink
+    COMMAND ${JLINKEXE} -device ${JLINK_DEVICE} ${OPTION_LIST} -if ${JLINK_IF} -JTAGConf -1,-1 -speed auto -CommandFile $<TARGET_FILE_DIR:${TARGET}>/${TARGET}.jlink
+    VERBATIM
     )
 endfunction()
 
@@ -420,6 +430,19 @@ function(family_flash_stlink TARGET)
   add_custom_target(${TARGET}-stlink
     DEPENDS ${TARGET}
     COMMAND ${STM32_PROGRAMMER_CLI} --connect port=swd --write $<TARGET_FILE:${TARGET}> --go
+    )
+endfunction()
+
+
+# Add flash st-flash target
+function(family_flash_stflash TARGET)
+  if (NOT DEFINED ST_FLASH)
+    set(ST_FLASH st-flash)
+  endif ()
+
+  add_custom_target(${TARGET}-stflash
+    DEPENDS ${TARGET}
+    COMMAND ${ST_FLASH} write $<TARGET_FILE_DIR:${TARGET}>/${TARGET}.bin 0x8000000
     )
 endfunction()
 
@@ -445,6 +468,7 @@ function(family_flash_openocd TARGET)
     )
 endfunction()
 
+
 # Add flash openocd-wch target
 # compiled from https://github.com/hathach/riscv-openocd-wch or https://github.com/dragonlock2/miscboards/blob/main/wch/SDK/riscv-openocd.tar.xz
 function(family_flash_openocd_wch TARGET)
@@ -454,6 +478,20 @@ function(family_flash_openocd_wch TARGET)
 
   family_flash_openocd(${TARGET})
 endfunction()
+
+
+# Add flash with https://github.com/ch32-rs/wlink
+function(family_flash_wlink_rs TARGET)
+  if (NOT DEFINED WLINK_RS)
+    set(WLINK_RS wlink)
+  endif ()
+
+  add_custom_target(${TARGET}-wlink-rs
+    DEPENDS ${TARGET}
+    COMMAND ${WLINK_RS} flash $<TARGET_FILE:${TARGET}>
+    )
+endfunction()
+
 
 # Add flash pycod target
 function(family_flash_pyocd TARGET)
@@ -467,6 +505,7 @@ function(family_flash_pyocd TARGET)
     )
 endfunction()
 
+
 # Flash with UF2
 function(family_flash_uf2 TARGET FAMILY_ID)
   add_custom_target(${TARGET}-uf2
@@ -474,6 +513,7 @@ function(family_flash_uf2 TARGET FAMILY_ID)
     COMMAND python ${UF2CONV_PY} -f ${FAMILY_ID} --deploy $<TARGET_FILE_DIR:${TARGET}>/${TARGET}.uf2
     )
 endfunction()
+
 
 # Add flash teensy_cli target
 function(family_flash_teensy TARGET)
@@ -486,6 +526,7 @@ function(family_flash_teensy TARGET)
     COMMAND ${TEENSY_CLI} --mcu=${TEENSY_MCU} -w -s $<TARGET_FILE_DIR:${TARGET}>/${TARGET}.hex
     )
 endfunction()
+
 
 # Add flash using NXP's LinkServer (redserver)
 # https://www.nxp.com/design/software/development-software/mcuxpresso-software-and-tools-/linkserver-for-microcontrollers:LINKERSERVER
