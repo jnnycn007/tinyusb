@@ -140,7 +140,6 @@ TU_ATTR_ALWAYS_INLINE static inline void hwfifo_reset(musb_regs_t* musb, unsigne
 
 TU_ATTR_ALWAYS_INLINE static inline bool hwfifo_config(musb_regs_t* musb, unsigned epnum, unsigned is_rx, unsigned mps,
                                                        bool double_packet) {
-  (void) epnum;
   uint8_t ffsize = hwfifo_byte2size(mps);
   mps = 8 << ffsize; // round up to the next power of 2
 
@@ -152,6 +151,13 @@ TU_ATTR_ALWAYS_INLINE static inline bool hwfifo_config(musb_regs_t* musb, unsign
   TU_ASSERT(alloced_fifo_bytes + mps <= MUSB_CFG_DYNAMIC_FIFO_SIZE);
   musb->fifo_addr[is_rx] = alloced_fifo_bytes / 8;
   musb->fifo_size[is_rx] = ffsize;
+
+  volatile uint16_t* dp_disable = is_rx ? &musb->rx_doulbe_packet_disable : &musb->tx_double_packet_disable;
+  if (double_packet) {
+    *dp_disable &= ~(1u << epnum);
+  } else {
+    *dp_disable |= (1u << epnum);
+  }
 
   alloced_fifo_bytes += mps;
   return true;
@@ -167,17 +173,22 @@ TU_ATTR_ALWAYS_INLINE static inline void hwfifo_reset(musb_regs_t* musb, unsigne
 TU_ATTR_ALWAYS_INLINE static inline bool hwfifo_config(musb_regs_t* musb, unsigned epnum, unsigned is_rx, unsigned mps,
                                                        bool double_packet) {
   (void) epnum; (void) mps;
-  if (!double_packet) {
-    #if defined(TUP_USBIP_MUSB_ADI)
-    musb->indexed_csr.maxp_csr[is_rx].csrh |= MUSB_CSRH_DISABLE_DOUBLE_PACKET(is_rx);
-    #else
-    if (is_rx) {
-      musb->rx_doulbe_packet_disable |= 1u << epnum;
-    } else {
-      musb->tx_double_packet_disable |= 1u << epnum;
-    }
-    #endif
+
+  #if defined(TUP_USBIP_MUSB_ADI)
+  volatile uint8_t* csrh = &musb->indexed_csr.maxp_csr[is_rx].csrh;
+  if (double_packet) {
+    *csrh &= ~MUSB_CSRH_DISABLE_DOUBLE_PACKET;
+  } else {
+    *csrh |= MUSB_CSRH_DISABLE_DOUBLE_PACKET;
   }
+  #else
+  volatile uint16_t* dp_disable = is_rx ? &musb->rx_doulbe_packet_disable : &musb->tx_double_packet_disable;
+  if (double_packet) {
+    *dp_disable &= ~(1u << epnum);
+  } else {
+    *dp_disable |= (1u << epnum);
+  }
+  #endif
 
   return true;
 }
@@ -250,6 +261,14 @@ static void process_epin(uint8_t rhport, musb_regs_t *musb_regs, uint8_t epnum) 
 
   pipe_state_t* pipe = pipe_get(epnum, TUSB_DIR_IN);
   if (pipe->remaining == 0) {
+    // All bytes have been loaded into the FIFO. With double-packet buffering a
+    // second packet may still be waiting in the FIFO when this IRQ fires (the
+    // hardware signals TXRDY clear as soon as a slot frees, not when the wire
+    // transfer finishes). Defer completion until FIFONE == 0 so we don't emit
+    // a duplicate xfer_complete before the final packet has been sent.
+    if (ep_csr->tx_csrl & MUSB_TXCSRL1_FIFONE) {
+      return;
+    }
     const uint16_t xferred_len = pipe->length;
     pipe->buf = NULL;
     pipe->armed = false;
@@ -649,7 +668,7 @@ bool dcd_edpt_open(uint8_t rhport, tusb_desc_endpoint_t const * ep_desc) {
 
   hwfifo_flush(musb, epn, is_rx, true);
 
-  TU_ASSERT(hwfifo_config(musb, epn, is_rx, mps, false));
+  TU_ASSERT(hwfifo_config(musb, epn, is_rx, mps, ep_desc->bmAttributes.xfer == TUSB_XFER_BULK));
   musb->intren_ep[is_rx] |= TU_BIT(epn);
 
   return true;

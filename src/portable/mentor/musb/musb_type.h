@@ -336,7 +336,7 @@ TU_ATTR_ALWAYS_INLINE static inline musb_ep_csr_t* get_ep_csr(musb_regs_t* musb_
 #define MUSB_CSRL_CLEAR_DATA_TOGGLE(_rx) (1u << ((_rx) ? 7 : 6))
 
 // 0x13, 0x17: TX/RX CSRH
-#define MUSB_CSRH_DISABLE_DOUBLE_PACKET(_rx) (1u << 1)
+#define MUSB_CSRH_DISABLE_DOUBLE_PACKET      (1u << 1)
 #define MUSB_CSRH_TX_MODE                    (1u << 5) // 1 = TX, 0 = RX. only relevant for SHARED FIFO
 #define MUSB_CSRH_ISO                        (1u << 6)
 
