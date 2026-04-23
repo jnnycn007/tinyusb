@@ -1285,6 +1285,32 @@ def test_example(board, f1, example):
     return err_count
 
 
+def build_board(board):
+    """Build firmware for this board via tools/build.py.
+    Honors board config's build.flags_on variants and build.args defines.
+    Output goes to cmake-build/cmake-build-BOARD[-f1_...]/ (tools/build.py layout)."""
+    name = board['name']
+    bcfg = board.get('build', {})
+    flags_on_list = bcfg.get('flags_on', [''])
+    extra_defs = bcfg.get('args', [])
+
+    failed = 0
+    for f1 in flags_on_list:
+        cmd = [sys.executable, f'{TINYUSB_ROOT}/tools/build.py', '-b', name]
+        for d in extra_defs:
+            cmd += ['-D', d]
+        if f1:
+            for flag in f1.split():
+                cmd += ['-f1', flag]
+        if verbose:
+            cmd.append('-v')
+            print(f'  + {" ".join(cmd)}')
+        r = subprocess.run(cmd, cwd=TINYUSB_ROOT)
+        if r.returncode != 0:
+            failed += 1
+    return name, failed
+
+
 def test_board(board):
     name = board['name']
     flasher = board['flasher']
@@ -1346,6 +1372,7 @@ def main():
     parser.add_argument('-sf', '--skip-flash', action='store_true', help='Run tests without flashing firmware (use whatever is already on the board)')
     parser.add_argument('-t', '--test-only', action='append', default=[], help='Tests to run, all if not specified')
     parser.add_argument('-B', '--build-dir', default='cmake-build', help='Build folder name (default: cmake-build)')
+    parser.add_argument('--build', action='store_true', help='Build firmware for selected boards with cmake before running tests')
     parser.add_argument('-r', '--retry', type=int, default=3, help='Retry count for failed tests (default: 3)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
     args = parser.parse_args()
@@ -1370,10 +1397,24 @@ def main():
     else:
         config_boards = [e for e in config['boards'] if e['name'] in boards]
 
-    err_count = 0
+    build_err = 0
+    if args.build:
+        if build_dir != 'cmake-build':
+            print(f'warning: --build writes into cmake-build/, but -B is {build_dir!r}; '
+                  f'tests will not find the freshly built firmware')
+        print('-' * 30)
+        print(f'Build phase: {len(config_boards)} board(s)')
+        print('-' * 30)
+        for board in config_boards:
+            _, nfail = build_board(board)
+            build_err += nfail
+        print('-' * 30)
+        print(f'Build phase done: {build_err} failed')
+        print('-' * 30)
+
     with Pool(processes=os.cpu_count()) as pool:
         mret = pool.map(test_board, config_boards)
-        err_count = sum(e[1] for e in mret)
+        err_count = build_err + sum(e[1] for e in mret)
         # generate skip list for next re-run if failed
         skip_fname = f'{config_file}.skip'
         if err_count > 0:

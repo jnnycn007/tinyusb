@@ -573,8 +573,8 @@ TU_ATTR_ALWAYS_INLINE static inline musb_ep_csr_t* get_ep_csr(musb_regs_t* musb_
 // numpackminus1 (HB-iso / HS-bulk multiplier - 1).
 //
 //*****************************************************************************
-#define MUSB_TXMAXP_PACKET_SIZE_MASK  0x07FFu
-#define MUSB_RXMAXP_PACKET_SIZE_MASK  0x07FFu
+#define MUSB_TXMAXP_PACKET_SIZE_M  0x07FFu
+#define MUSB_RXMAXP_PACKET_SIZE_M  0x07FFu
 
 //*****************************************************************************
 //
