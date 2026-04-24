@@ -71,15 +71,17 @@ uint8_t* usbd_get_ctrl_buf(void) {
 // Application API
 //--------------------------------------------------------------------+
 
+// Endpoint used for the Status stage of a control transfer.
+// Per USB 2.0 §9.3.1, when wLength == 0 the Direction bit is ignored and the Status stage
+// is always IN. Otherwise the Status stage is opposite to the Data stage direction.
+TU_ATTR_ALWAYS_INLINE static inline uint8_t status_stage_ep(const tusb_control_request_t* request) {
+  if (request->wLength == 0) return EDPT_CTRL_IN;
+  return request->bmRequestType_bit.direction ? EDPT_CTRL_OUT : EDPT_CTRL_IN;
+}
+
 // Queue ZLP status transaction
-static inline bool status_stage_xact(uint8_t rhport, const tusb_control_request_t* request) {
-  // Always use EDPT_CTRL_IN when control request wLength is zero
-  if (request->wLength==0) {
-    return usbd_edpt_xfer(rhport, EDPT_CTRL_IN, NULL, 0, false);
-  }
-  // Opposite to endpoint in Data Phase
-  const uint8_t ep_addr = request->bmRequestType_bit.direction ? EDPT_CTRL_OUT : EDPT_CTRL_IN;
-  return usbd_edpt_xfer(rhport, ep_addr, NULL, 0, false);
+TU_ATTR_ALWAYS_INLINE static inline bool status_stage_xact(uint8_t rhport, const tusb_control_request_t* request) {
+  return usbd_edpt_xfer(rhport, status_stage_ep(request), NULL, 0, false);
 }
 
 // Status phase
@@ -160,10 +162,8 @@ void usbd_control_set_request(const tusb_control_request_t* request) {
 bool usbd_control_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes) {
   (void) result;
 
-  // Endpoint Address is opposite to direction bit, this is Status Stage complete event
-  // Control request with zero wLength and IN direction also is Status Stage complete event
-  if ((tu_edpt_dir(ep_addr) != _ctrl_xfer.request.bmRequestType_bit.direction)||
-      (_ctrl_xfer.request.wLength==0&&_ctrl_xfer.request.bmRequestType_bit.direction==TUSB_DIR_IN)) {
+  // Status Stage complete: callback endpoint matches the Status stage endpoint
+  if (ep_addr == status_stage_ep(&_ctrl_xfer.request)) {
     TU_ASSERT(0 == xferred_bytes);
 
     // invoke optional dcd hook if available
