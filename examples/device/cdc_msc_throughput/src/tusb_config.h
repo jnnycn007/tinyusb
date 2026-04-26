@@ -85,7 +85,7 @@ extern "C" {
 // Large MSC bulk buffer: host transfers big CBW payloads (e.g. dd bs=1M does 64KiB
 // chunks). A 4K per-bulk-IO buffer lets the class driver amortise the per-CBW
 // overhead across many USB packets, approximating the maximum USB bulk throughput.
-#define CFG_TUD_MSC_EP_BUFSIZE   4096
+#define CFG_TUD_MSC_EP_BUFSIZE   (TUD_OPT_HIGH_SPEED  ? 4096 : 1024)
 
 // #define CFG_TUD_CDC_TX_PERSISTENT 1
 
@@ -94,7 +94,7 @@ extern "C" {
 #define CFG_TUD_CDC_TX_EPSIZE    CFG_TUD_CDC_RX_EPSIZE
 
 #define CFG_TUD_CDC_RX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 2*512 : 2*64)
-#define CFG_TUD_CDC_TX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 2*512 : 2*64)
+#define CFG_TUD_CDC_TX_BUFSIZE   CFG_TUD_CDC_RX_BUFSIZE
 
 #ifdef __cplusplus
 }
