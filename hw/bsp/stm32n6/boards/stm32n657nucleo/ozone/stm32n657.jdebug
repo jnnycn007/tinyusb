@@ -1,4 +1,3 @@
-
 /*********************************************************************
 *
 *       OnProjectLoad
@@ -6,31 +5,34 @@
 * Function description
 *   Project load routine. Required.
 *
+* Notes
+*   Nucleo-N657X0-Q wires 4-bit trace to the CN1 MIPI20 natively (SB36/38/
+*   39/40/41 fitted by default): TRACE_CLK = PB3, D0/D1/D2/D3 =
+*   PE3/PB0/PB6/PB7 (MB1940 Table 5). No J-Link script needed - the N6
+*   trace components sit behind a ROM table J-Link discovers natively.
+*
+*   BOOT1 (JP2) must select Development boot (BOOT1 = 1): the N657 is
+*   flashless, the app is a RAM image (AXISRAM2) loaded by the debugger,
+*   and in flash boot the bootROM parks the chip un-attachable.
+*   Firmware must be built with TRACE_ETM=1 (pin mux + DBGMCU
+*   DBGCLKEN/TRACECLKEN). Trace clock = cpu/8. TRACE_ETM builds run a 300 MHz core (board.h) ->
+*   37.5 MHz TPIU clock: 600 MHz kills the stream in the startup burst.
+*
 **********************************************************************
 */
 void OnProjectLoad (void) {
-  Project.AddSvdFile ("Cortex-M33.svd");
-  Project.AddSvdFile ("./R7FA6M5BH.svd");
-
-  Project.SetDevice ("R7FA6M5BH");
-  Project.SetHostIF ("USB", "");
-  Project.SetTargetIF ("SWD");
-  Project.SetTIFSpeed ("4 MHz");   // 50 MHz SWD gave intermittent "Failed to initialize DAP"
-
   Project.SetTraceSource ("Trace Pins");
   Project.SetTracePortWidth (4);
+  Project.SetSWO (0);
+  Edit.SysVar (VAR_TRACE_CORE_CLOCK, 300000000);
+  Project.AddSvdFile ("$(InstallDir)/Config/CPU/Cortex-M55F.svd");
 
-  File.Open ("../../../../../../examples/cmake-build-ra6m5_ek/device/cdc_msc/cdc_msc.elf");
-}
-/*********************************************************************
-*
-*       BeforeTargetConnect
-*
-**********************************************************************
-*/
-void BeforeTargetConnect (void) {
-  // Trace pin init is done by J-Link script file as J-Link script files are IDE independent
-	Project.SetJLinkScript("../../../debug.jlinkscript");
+  Project.SetDevice ("STM32N657X0");
+  Project.SetHostIF ("USB", "");
+  Project.SetTargetIF ("SWD");
+  Project.SetTIFSpeed ("4 MHz");
+
+  File.Open ("../../../../../../examples/cmake-build-stm32n657nucleo/device/cdc_msc/cdc_msc.elf");
 }
 
 /*********************************************************************
@@ -51,18 +53,12 @@ void AfterTargetReset (void) {
 
   VectorTableAddr = Elf.GetBaseAddr();
 
-  if (VectorTableAddr != 0xFFFFFFFF) {
+  if (VectorTableAddr == 0xFFFFFFFF) {
+    Util.Log("Project file error: failed to get program base");
+  } else {
     SP = Target.ReadU32(VectorTableAddr);
     Target.SetReg("SP", SP);
-  } else {
-    Util.Log("Project file error: failed to get program base");
-  }
 
-  PC = Elf.GetEntryPointPC();
-
-  if (PC != 0xFFFFFFFF) {
-    Target.SetReg("PC", PC);
-  } else if (VectorTableAddr != 0xFFFFFFFF) {
     PC = Target.ReadU32(VectorTableAddr + 4);
     Target.SetReg("PC", PC);
   }
@@ -70,7 +66,7 @@ void AfterTargetReset (void) {
 
 /*********************************************************************
 *
-*      AfterTargetDownload
+*       AfterTargetDownload
 *
 * Function description
 *   Event handler routine.
@@ -86,18 +82,12 @@ void AfterTargetDownload (void) {
 
   VectorTableAddr = Elf.GetBaseAddr();
 
-  if (VectorTableAddr != 0xFFFFFFFF) {
+  if (VectorTableAddr == 0xFFFFFFFF) {
+    Util.Log("Project file error: failed to get program base");
+  } else {
     SP = Target.ReadU32(VectorTableAddr);
     Target.SetReg("SP", SP);
-  } else {
-    Util.Log("Project file error: failed to get program base");
-  }
 
-  PC = Elf.GetEntryPointPC();
-
-  if (PC != 0xFFFFFFFF) {
-    Target.SetReg("PC", PC);
-  } else if (VectorTableAddr != 0xFFFFFFFF) {
     PC = Target.ReadU32(VectorTableAddr + 4);
     Target.SetReg("PC", PC);
   }
